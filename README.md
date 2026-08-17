@@ -1,0 +1,825 @@
+# LLM Text-to-SQL Benchmark
+
+A practical evaluation framework for benchmarking and comparing Large Language Models (LLMs) on natural-language-to-SQL generation using a standardized Golden Dataset, SQLite database execution, and automated result-based evaluation.
+
+---
+
+## 1. What This Project Does
+
+The main goal is to answer:
+
+> **Which LLM is better at generating correct SQL queries from natural-language questions?**
+
+For example:
+
+### User Question
+
+```text
+Who scored the most runs in IPL 2023?
+```
+
+The LLM generates SQL:
+
+```sql
+SELECT batter, SUM(batsman_runs) AS total_runs
+FROM deliveries
+WHERE season = 2023
+GROUP BY batter
+ORDER BY total_runs DESC
+LIMIT 1;
+```
+
+The generated SQL is then executed against the database and its result is compared with the expected result.
+
+The overall flow is:
+
+```text
+Raw IPL CSV Files
+       ↓
+Build SQLite Database
+       ↓
+Extract Database Schema
+       ↓
+Golden Dataset
+       ↓
+LLM generates SQL
+       ↓
+Execute generated SQL
+       ↓
+Compare with expected result
+       ↓
+Calculate score
+       ↓
+Save evaluation results
+```
+
+---
+
+# 2. Project Pipeline
+
+The project is divided into four main stages:
+
+```text
+STAGE 1
+Build Database
+       ↓
+STAGE 2
+Extract Schema
+       ↓
+STAGE 3
+Golden Dataset
+       ↓
+STAGE 4
+Run Evaluation
+```
+
+---
+
+# 3. Project Structure
+
+```text
+llm-sql-eval/
+│
+├── main.py                    # Run this last for full evaluation
+├── requirements.txt
+├── README.md
+│
+├── config/
+│   └── models.py              # Models under test
+│
+├── 01_build_database/         # STAGE 1: run first
+│   ├── raw_data/
+│   │   ├── matches.csv
+│   │   └── deliveries.csv
+│   │
+│   ├── build_database.py      # Raw CSVs → SQLite database
+│   └── ipl_2021_2024.db
+│
+├── 02_extract_schema/         # STAGE 2: run second
+│   ├── extract_schema.py      # Database → schema.sql
+│   └── schema.sql
+│
+├── 03_golden_dataset/         # STAGE 3: optional
+│   ├── golden_dataset.csv     # Prebuilt 30-question dataset
+│   ├── hard_questions_source.py
+│   └── build_golden_hard_csv.py
+│
+├── 04_run_evaluation/         # STAGE 4: scoring logic
+│   ├── evaluator.py
+│   └── results/
+│       └── eval_results.csv
+│
+└── scratch/
+    └── quick_manual_test.py   # One-off manual testing
+```
+
+---
+
+# 4. Requirements
+
+Make sure Python is installed.
+
+Recommended:
+
+```text
+Python 3.10+
+```
+
+Create a virtual environment:
+
+```bash
+python -m venv venv
+```
+
+Activate it on Windows:
+
+```bash
+venv\Scripts\activate
+```
+
+Activate it on macOS/Linux:
+
+```bash
+source venv/bin/activate
+```
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+# 5. API Keys
+
+The project uses LLM APIs to generate SQL.
+
+Create a `.env` file in the project root:
+
+```text
+OPENROUTER_API_KEY=your_api_key_here
+```
+
+Do not commit your `.env` file to GitHub.
+
+Make sure `.gitignore` contains:
+
+```text
+.env
+venv/
+__pycache__/
+```
+
+---
+
+# 6. STAGE 1: Build Database
+
+## Folder
+
+```text
+01_build_database/
+```
+
+This stage converts the raw IPL CSV files into a SQLite database.
+
+### Input
+
+```text
+matches.csv
+deliveries.csv
+```
+
+### Output
+
+```text
+ipl_2021_2024.db
+```
+
+Run:
+
+```bash
+cd 01_build_database
+python build_database.py
+```
+
+The generated database contains the IPL data that will later be queried by the LLM-generated SQL.
+
+---
+
+# 7. STAGE 2: Extract Schema
+
+## Folder
+
+```text
+02_extract_schema/
+```
+
+The LLM needs to know the database structure before generating SQL.
+
+For example:
+
+```text
+Table: matches
+
+Columns:
+- id
+- season
+- team1
+- team2
+- winner
+```
+
+and:
+
+```text
+Table: deliveries
+
+Columns:
+- match_id
+- batter
+- bowler
+- batsman_runs
+- total_runs
+```
+
+The schema extractor reads the SQLite database and generates:
+
+```text
+schema.sql
+```
+
+Run:
+
+```bash
+cd ../02_extract_schema
+python extract_schema.py
+```
+
+Output:
+
+```text
+schema.sql
+```
+
+---
+
+# 8. STAGE 3: Golden Dataset
+
+## Folder
+
+```text
+03_golden_dataset/
+```
+
+The Golden Dataset contains questions that are used to evaluate the LLMs.
+
+For example:
+
+```text
+Question:
+Who scored the most runs in IPL 2023?
+
+Expected SQL:
+SELECT ...
+```
+
+The repository contains a prebuilt:
+
+```text
+golden_dataset.csv
+```
+
+with approximately 30 evaluation questions.
+
+Therefore, you normally do not need to generate it again.
+
+---
+
+## Hard Questions Dataset
+
+The project also contains a harder question set:
+
+```text
+hard_questions_source.py
+```
+
+To build the hard-question CSV:
+
+```bash
+cd ../03_golden_dataset
+python build_golden_hard_csv.py
+```
+
+This is useful for testing more complex SQL reasoning.
+
+---
+
+# 9. STAGE 4: Evaluation
+
+## Folder
+
+```text
+04_run_evaluation/
+```
+
+This stage contains the scoring logic.
+
+```text
+evaluator.py
+```
+
+The evaluator checks whether the SQL generated by an LLM produces the correct answer.
+
+Conceptually:
+
+```text
+Question
+    ↓
+LLM
+    ↓
+Generated SQL
+    ↓
+SQLite Database
+    ↓
+Query Result
+    ↓
+Compare with Expected Result
+    ↓
+Pass / Fail
+```
+
+The evaluation results are saved to:
+
+```text
+04_run_evaluation/results/eval_results.csv
+```
+
+---
+
+# 10. Model Configuration
+
+Models under evaluation are defined in:
+
+```text
+config/models.py
+```
+
+For example:
+
+```python
+MODELS = [
+    "openai/gpt-4o",
+    "google/gemini-2.0-flash",
+    "moonshotai/kimi-k2",
+]
+```
+
+The exact models can be changed according to the models you want to evaluate.
+
+This makes it easy to add or remove candidate models without changing the main evaluation logic.
+
+---
+
+# 11. Running the Complete Evaluation
+
+After completing the required stages:
+
+```text
+01_build_database
+        ↓
+02_extract_schema
+        ↓
+03_golden_dataset
+        ↓
+04_run_evaluation
+```
+
+Run the final entry point from the project root:
+
+```bash
+python main.py
+```
+
+`main.py` runs the complete evaluation pipeline.
+
+---
+
+# 12. Evaluation Example
+
+Suppose the Golden Dataset contains:
+
+```text
+Question:
+How many matches did Mumbai Indians win in 2023?
+```
+
+The LLM generates:
+
+```sql
+SELECT COUNT(*)
+FROM matches
+WHERE winner = 'Mumbai Indians'
+AND season = 2023;
+```
+
+The query is executed against:
+
+```text
+ipl_2021_2024.db
+```
+
+Suppose the database returns:
+
+```text
+8
+```
+
+If the expected answer is also:
+
+```text
+8
+```
+
+then the question passes:
+
+```text
+Expected Result: 8
+Model Result:    8
+
+Result: PASS
+```
+
+If the model returns:
+
+```text
+7
+```
+
+then:
+
+```text
+Expected Result: 8
+Model Result:    7
+
+Result: FAIL
+```
+
+---
+
+# 13. Evaluation Results
+
+The final results are stored in:
+
+```text
+04_run_evaluation/results/eval_results.csv
+```
+
+The result file can contain information such as:
+
+```text
+model
+question
+generated_sql
+expected_result
+actual_result
+status
+score
+```
+
+Example:
+
+```text
+Model              Question                  Status
+---------------------------------------------------
+GPT-4o             Q1                        PASS
+GPT-4o             Q2                        PASS
+Kimi               Q1                        PASS
+Kimi               Q2                        FAIL
+Gemini             Q1                        PASS
+```
+
+This allows different models to be compared objectively.
+
+---
+
+# 14. Scratch Folder
+
+The:
+
+```text
+scratch/
+```
+
+folder is for temporary experiments.
+
+Example:
+
+```text
+scratch/quick_manual_test.py
+```
+
+You can use it to quickly test:
+
+- LLM connectivity
+- SQL queries
+- Prompts
+- Database connectivity
+- Schema extraction
+- Individual model responses
+
+These experiments are **not part of the main evaluation pipeline**.
+
+---
+
+# 15. Recommended Execution Order
+
+Follow this order when setting up the project for the first time.
+
+### Step 1: Clone the repository
+
+```bash
+git clone <your-repository-url>
+cd llm-sql-eval
+```
+
+### Step 2: Create virtual environment
+
+```bash
+python -m venv venv
+```
+
+### Step 3: Activate virtual environment
+
+Windows:
+
+```bash
+venv\Scripts\activate
+```
+
+macOS/Linux:
+
+```bash
+source venv/bin/activate
+```
+
+### Step 4: Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### Step 5: Configure API key
+
+Create:
+
+```text
+.env
+```
+
+Add:
+
+```text
+OPENROUTER_API_KEY=your_api_key
+```
+
+### Step 6: Add raw data
+
+Place the IPL CSV files here:
+
+```text
+01_build_database/raw_data/
+```
+
+Required files:
+
+```text
+matches.csv
+deliveries.csv
+```
+
+### Step 7: Build database
+
+```bash
+cd 01_build_database
+python build_database.py
+```
+
+### Step 8: Extract schema
+
+```bash
+cd ../02_extract_schema
+python extract_schema.py
+```
+
+### Step 9: Check Golden Dataset
+
+The prebuilt dataset is available at:
+
+```text
+03_golden_dataset/golden_dataset.csv
+```
+
+No additional step is required unless you want to create the hard dataset.
+
+### Step 10: Run full evaluation
+
+Return to the project root:
+
+```bash
+cd ..
+python main.py
+```
+
+### Step 11: Check results
+
+Open:
+
+```text
+04_run_evaluation/results/eval_results.csv
+```
+
+---
+
+# 16. Complete Architecture
+
+```text
+                    ┌─────────────────────┐
+                    │   Raw IPL CSV Data  │
+                    │ matches.csv         │
+                    │ deliveries.csv      │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │  Build Database     │
+                    │ build_database.py   │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │  SQLite Database    │
+                    │ ipl_2021_2024.db    │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │ Schema Extraction   │
+                    │ extract_schema.py   │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │    schema.sql       │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │  Golden Dataset     │
+                    │ 30 Questions        │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │      LLM Model      │
+                    │ Generate SQL        │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │ Generated SQL       │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │ SQLite Execution    │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │     Evaluator       │
+                    │ evaluator.py        │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │ Evaluation Results  │
+                    │ eval_results.csv    │
+                    └─────────────────────┘
+```
+
+---
+
+# 17. Key Idea
+
+This project is essentially an **LLM Text-to-SQL benchmark**.
+
+It tests:
+
+```text
+Natural Language
+       ↓
+      LLM
+       ↓
+     SQL
+       ↓
+   Database
+       ↓
+    Result
+       ↓
+ Evaluation
+```
+
+The same questions are given to different models.
+
+Each model generates SQL, the SQL is executed against the same database, and the resulting answer is compared with the expected answer.
+
+The model that produces the most correct database answers gets the highest score.
+
+---
+
+# 18. Why Use a Golden Dataset?
+
+The Golden Dataset provides a fixed set of questions and expected answers.
+
+For example:
+
+```text
+Question 1 → Correct Answer
+Question 2 → Correct Answer
+Question 3 → Correct Answer
+...
+Question 30 → Correct Answer
+```
+
+Every model is tested against the same questions.
+
+This makes the comparison fair.
+
+```text
+             Same Questions
+                   │
+       ┌───────────┼───────────┐
+       ▼           ▼           ▼
+     GPT-4o       Kimi       Gemini
+       │           │           │
+       ▼           ▼           ▼
+     Score       Score       Score
+```
+
+---
+
+# 19. Final Goal
+
+The final goal is to produce a comparison such as:
+
+```text
+Model              Accuracy
+--------------------------------
+Model A             93.3%
+Model B             86.7%
+Model C             80.0%
+```
+
+This helps determine which LLM performs best for the specific Text-to-SQL task.
+
+---
+
+# 20. Important Notes
+
+- Keep the Golden Dataset fixed when comparing models so that every model is evaluated fairly.
+- Use the same database and schema for all models.
+- Keep API keys in `.env` and never commit them.
+- Use `scratch/` for experiments instead of modifying the main pipeline.
+- The `03_golden_dataset` stage is optional when using the shipped `golden_dataset.csv`.
+- The `main.py` file should be run only after the required database, schema, and dataset files are available.
+
+---
+
+# 21. Summary
+
+The project follows a simple four-stage pipeline:
+
+```text
+1. Build Database
+       ↓
+2. Extract Schema
+       ↓
+3. Prepare Golden Dataset
+       ↓
+4. Evaluate LLMs
+```
+
+The final command is:
+
+```bash
+python main.py
+```
+
+The evaluation results can be found at:
+
+```text
+04_run_evaluation/results/eval_results.csv
+```
+
+The project can then be used to compare multiple LLMs and identify which model performs best at generating correct SQL for the target database.
