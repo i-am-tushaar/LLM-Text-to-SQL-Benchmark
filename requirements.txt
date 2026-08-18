@@ -1,3 +1,4 @@
 pandas
-python-dotenv
 langchain-openrouter
+langchain-core
+python-dotenv
